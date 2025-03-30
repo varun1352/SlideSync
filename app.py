@@ -15,6 +15,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaInMemoryUpload
 import requests
+import secrets  # Add this import at the top
 
 # Import Cerebras integration
 from cerebras_integration import process_slide_with_cerebras
@@ -22,6 +23,14 @@ from cerebras_integration import process_slide_with_cerebras
 # Initialize Flask app
 app = Flask(__name__, static_url_path='/static')
 app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(24)
+
+app.config.update(
+    SESSION_COOKIE_SECURE=False,  # Set to True in production with HTTPS
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE=None,  # Important for mobile OAuth flows
+    PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=1)
+)
+
 
 # OAuth Configuration with full permissions for Calendar and Docs
 oauth = OAuth(app)
@@ -98,6 +107,10 @@ def get_people_service():
         return None
     return build('people', 'v1', credentials=credentials)
 
+@app.before_request
+def make_session_permanent():
+    session.permanent = True
+
 # Routes
 @app.route('/')
 def index():
@@ -168,49 +181,66 @@ def index():
 def login():
     # Force removal of previous session
     session.clear()
+    state = secrets.token_urlsafe(16)
+    
+    # Store state in session
+    session['oauth_state'] = state
+    
+    # Ensure session is saved
+    session.modified = True
+    
+    # Get the redirect URI
     redirect_uri = url_for('authorize', _external=True)
-    return google.authorize_redirect(redirect_uri)
+    
+    # Pass the state parameter explicitly
+    return google.authorize_redirect(redirect_uri, state=state)
 
 @app.route('/authorize')
 def authorize():
-    token = google.authorize_access_token()
-    
-    # Debug information - Print to console
-    print("-------- TOKEN DEBUG INFO --------")
-    print(f"Token type: {token.get('token_type')}")
-    print(f"Scopes: {token.get('scope', '')}")
-    print("----------------------------------")
-    
-    # Save credentials in session
-    session['oauth_token'] = token
-    
-    # Get user info
-    resp = google.get('https://openidconnect.googleapis.com/v1/userinfo')
-    user_info = resp.json()
-    
-    # Add profile picture URL to user info
-    if 'sub' in user_info:
-        # Attempt to get a higher resolution profile picture if available
-        try:
-            people_service = get_people_service()
-            if people_service:
-                person = people_service.people().get(
-                    resourceName=f'people/{user_info["sub"]}',
-                    personFields='photos'
-                ).execute()
-                
-                if 'photos' in person and len(person['photos']) > 0:
-                    # Find the photo with the highest resolution
-                    best_photo = max(person['photos'], key=lambda p: p.get('width', 0) if 'width' in p else 0)
-                    if 'url' in best_photo:
-                        user_info['picture'] = best_photo['url']
-        except Exception as e:
-            print(f"Error getting profile photo: {e}")
-            # Fall back to the default profile picture in user_info
-    
-    session['user'] = user_info
-    
-    return redirect('/')
+    try:    
+        token = google.authorize_access_token()
+        
+        # Debug information - Print to console
+        print("-------- TOKEN DEBUG INFO --------")
+        print(f"Token type: {token.get('token_type')}")
+        print(f"Scopes: {token.get('scope', '')}")
+        print("----------------------------------")
+        
+        # Save credentials in session
+        session['oauth_token'] = token
+        
+        # Get user info
+        resp = google.get('https://openidconnect.googleapis.com/v1/userinfo')
+        user_info = resp.json()
+        
+        # Add profile picture URL to user info
+        if 'sub' in user_info:
+            # Attempt to get a higher resolution profile picture if available
+            try:
+                people_service = get_people_service()
+                if people_service:
+                    person = people_service.people().get(
+                        resourceName=f'people/{user_info["sub"]}',
+                        personFields='photos'
+                    ).execute()
+                    
+                    if 'photos' in person and len(person['photos']) > 0:
+                        # Find the photo with the highest resolution
+                        best_photo = max(person['photos'], key=lambda p: p.get('width', 0) if 'width' in p else 0)
+                        if 'url' in best_photo:
+                            user_info['picture'] = best_photo['url']
+            except Exception as e:
+                print(f"Error getting profile photo: {e}")
+                # Fall back to the default profile picture in user_info
+        
+        session['user'] = user_info
+        
+        return redirect('/')
+    except Exception as e:
+            print(f"Authorization error: {str(e)}")
+            # Clear session and retry login
+            session.clear()
+            return redirect(url_for('login'))
 
 @app.route('/logout')
 def logout():
