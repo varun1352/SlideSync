@@ -4,8 +4,7 @@ import io
 from PIL import Image
 import numpy as np
 import cv2
-import secrets
-import time
+from flask import jsonify
 
 # Check if Cerebras API key is available
 CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY")
@@ -26,41 +25,6 @@ if USE_CEREBRAS:
 else:
     print("No Cerebras API key found")
 
-def preprocess_image_for_ocr(image):
-    """
-    Preprocess image to make it suitable for OCR and reduce size
-    
-    Args:
-        image: NumPy array of the image
-        
-    Returns:
-        Preprocessed image as NumPy array
-    """
-    # Resize large images
-    max_dimension = 1600  # Maximum dimension (width or height)
-    height, width = image.shape[:2]
-    
-    # Check if resizing is needed
-    if height > max_dimension or width > max_dimension:
-        # Calculate new dimensions while preserving aspect ratio
-        if height > width:
-            new_height = max_dimension
-            new_width = int(width * (max_dimension / height))
-        else:
-            new_width = max_dimension
-            new_height = int(height * (max_dimension / width))
-        
-        # Resize the image
-        image = cv2.resize(image, (new_width, new_height))
-    
-    # Convert to grayscale
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
-    # Apply thresholding to improve OCR
-    _, threshold = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    
-    return threshold
-
 def enhance_image_with_cerebras(image_array):
     """
     Use Cerebras for advanced image enhancement
@@ -78,15 +42,20 @@ def enhance_image_with_cerebras(image_array):
         return enhanced
     
     try:
-        # Preprocess image to reduce size
-        preprocessed = preprocess_image_for_ocr(image_array)
-        
         # Convert image to base64 for API transmission
-        _, buffer = cv2.imencode('.jpg', preprocessed, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        _, buffer = cv2.imencode('.png', enhanced)
         img_base64 = base64.b64encode(buffer).decode('utf-8')
         
-        # Call Cerebras API for image enhancement with simpler prompt
-        prompt = "Enhance this image for OCR readability. Adjust contrast, remove noise, and optimize for text detection."
+        # Call Cerebras API for image enhancement
+        prompt = """
+        You are a specialized image enhancement AI. You're receiving a slide image 
+        that needs to be optimized for OCR. Here are the steps to take:
+        1. Correct perspective distortion if the slide appears skewed
+        2. Enhance contrast to make text more readable
+        3. Remove noise and artifacts that might interfere with text recognition
+        4. Optimize the image specifically for OCR text extraction
+        Return only the processed image data without any additional text or commentary.
+        """
         
         # Using simpler API call without response_format parameter
         response = cerebras_client.chat.completions.create(
@@ -95,7 +64,7 @@ def enhance_image_with_cerebras(image_array):
                 {"role": "user", "content": f"<image>{img_base64}</image>"}
             ],
             model="llama3.1-8b",  # Using smaller model for faster processing
-            max_tokens=256
+            max_tokens=1024
         )
         
         # Check if the response contains valid image data
@@ -119,52 +88,9 @@ def enhance_image_with_cerebras(image_array):
         print(f"Error in Cerebras image enhancement: {str(e)}")
         return enhanced
 
-def extract_text_from_image_chunk(chunk, chunk_index=0):
-    """
-    Extract text from a single image chunk using Cerebras
-    
-    Args:
-        chunk: Image chunk as NumPy array
-        chunk_index: Index of the chunk for logging
-        
-    Returns:
-        Extracted text as string
-    """
-    if not USE_CEREBRAS:
-        return "OCR processing unavailable - Cerebras API key required."
-    
-    try:
-        # Convert chunk to base64
-        _, buffer = cv2.imencode('.jpg', chunk, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        chunk_base64 = base64.b64encode(buffer).decode('utf-8')
-        
-        # Very simple prompt to reduce token usage
-        prompt = "Extract text from this image, output text only."
-        
-        # Call Cerebras with minimal parameters
-        response = cerebras_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": f"<image>{chunk_base64}</image>"}
-            ],
-            model="llama3.1-8b",
-            max_tokens=512,
-            temperature=0.0
-        )
-        
-        if hasattr(response.choices[0].message, 'content') and response.choices[0].message.content:
-            return response.choices[0].message.content.strip()
-        else:
-            return ""
-    except Exception as e:
-        print(f"Error extracting text from chunk {chunk_index}: {str(e)}")
-        # Add a delay before retrying to avoid rate limits
-        time.sleep(2)
-        return ""
-
 def extract_text_with_cerebras(image_array):
     """
-    Use Cerebras for advanced OCR with image chunking
+    Use Cerebras for advanced OCR
     
     Args:
         image_array: NumPy array of the image
@@ -176,52 +102,42 @@ def extract_text_with_cerebras(image_array):
         return "OCR processing unavailable - Cerebras API key required."
     
     try:
-        # Preprocess image
-        processed_image = preprocess_image_for_ocr(image_array)
+        # Convert image to base64 for API transmission
+        _, buffer = cv2.imencode('.png', image_array)
+        img_base64 = base64.b64encode(buffer).decode('utf-8')
         
-        # For large images, divide into chunks
-        height, width = processed_image.shape[:2]
+        # Call Cerebras API for OCR
+        prompt = """
+        You are a specialized OCR AI. You're receiving a slide image that contains text.
+        Your task is to extract all visible text from the image.
+        Preserve the formatting and structure of the text as much as possible.
+        Handle special characters, bullet points, and different font styles.
+        Return only the extracted text, formatted as it appears in the slide.
+        """
         
-        # Determine if we need to chunk the image
-        if height * width > 1000000:  # Roughly 1 megapixel
-            # Split image into quadrants
-            chunks = []
-            
-            # Calculate quadrant dimensions
-            h_mid = height // 2
-            w_mid = width // 2
-            
-            # Create 4 quadrants
-            chunks.append(processed_image[0:h_mid, 0:w_mid])  # Top-left
-            chunks.append(processed_image[0:h_mid, w_mid:])   # Top-right
-            chunks.append(processed_image[h_mid:, 0:w_mid])   # Bottom-left
-            chunks.append(processed_image[h_mid:, w_mid:])    # Bottom-right
-            
-            # Process each chunk
-            extracted_texts = []
-            for i, chunk in enumerate(chunks):
-                # Convert chunk to grayscale if it's not already
-                if len(chunk.shape) == 3:
-                    chunk = cv2.cvtColor(chunk, cv2.COLOR_BGR2GRAY)
-                    
-                # Extract text from this chunk
-                chunk_text = extract_text_from_image_chunk(chunk, i)
-                if chunk_text:
-                    extracted_texts.append(chunk_text)
-                    
-                # Add delay between API calls to avoid rate limits
-                if i < len(chunks) - 1:
-                    time.sleep(1)
-            
-            # Combine extracted text from all chunks
-            return "\n\n".join(extracted_texts)
+        # Using simpler API call
+        response = cerebras_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"<image>{img_base64}</image>"}
+            ],
+            model="llama3.1-8b",  # Using smaller model for faster processing
+            max_tokens=1024
+        )
+        
+        if hasattr(response.choices[0].message, 'content') and response.choices[0].message.content:
+            extracted_text = response.choices[0].message.content.strip()
+            # Check if the response is valid text (not JSON or other format)
+            if extracted_text and not extracted_text.startswith('{') and len(extracted_text) > 5:
+                return extracted_text
+            else:
+                return "OCR processing resulted in invalid text format."
         else:
-            # Small enough to process as one image
-            return extract_text_from_image_chunk(processed_image)
+            return "OCR processing returned empty result."
             
     except Exception as e:
         print(f"Error in Cerebras OCR: {str(e)}")
-        return f"OCR processing unavailable - Issue with OCR service. Error: {str(e)}"
+        return f"OCR processing unavailable - Issue with OCR generated via Cerebras. Error: {str(e)}"
 
 # Function to be used in your Flask routes
 def process_slide_with_cerebras(image):
@@ -238,37 +154,49 @@ def process_slide_with_cerebras(image):
         # Create a copy of the original image
         original_image = image.copy()
         
-        # Resize large images to prevent token limit issues
-        height, width = original_image.shape[:2]
-        if height > 2000 or width > 2000:
-            # Calculate new dimensions while preserving aspect ratio
-            if height > width:
-                new_height = 2000
-                new_width = int(width * (2000 / height))
-            else:
-                new_width = 2000
-                new_height = int(height * (2000 / width))
-            
-            # Resize the image
-            resized_image = cv2.resize(original_image, (new_width, new_height))
-        else:
-            resized_image = original_image
+        # Create an enhanced version for OCR
+        enhanced_for_ocr = image.copy()
         
-        # Try to extract text using Cerebras with chunking approach
+        # Convert to grayscale
+        gray = cv2.cvtColor(enhanced_for_ocr, cv2.COLOR_BGR2GRAY)
+        
+        # Increase contrast
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced_gray = clahe.apply(gray)
+        
+        # Apply light thresholding to enhance text
+        _, thresh = cv2.threshold(enhanced_gray, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # Try to extract text directly using Cerebras if available
         extracted_text = ""
         try:
-            if USE_CEREBRAS:
-                extracted_text = extract_text_with_cerebras(resized_image)
+            if 'cerebras_client' in globals():
+                # Convert image to base64
+                _, buffer = cv2.imencode('.jpg', original_image)
+                img_base64 = base64.b64encode(buffer).decode('utf-8')
+                
+                # Call Cerebras for text extraction
+                response = cerebras_client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": "Extract all visible text from this whiteboard image. Return only the text in plain format."},
+                        {"role": "user", "content": f"<image>{img_base64}</image>"}
+                    ],
+                    model="llama3.1-8b",
+                    max_tokens=1024
+                )
+                
+                if hasattr(response.choices[0].message, 'content'):
+                    extracted_text = response.choices[0].message.content
         except Exception as e:
             print(f"Cerebras OCR error: {e}")
-            extracted_text = "Error extracting text. Please try again with a clearer photo."
+            extracted_text = ""
         
-        # If Cerebras failed or returned empty text, provide a fallback message
-        if not extracted_text or extracted_text.strip() == "":
-            extracted_text = "Unable to extract text from this image. Try a clearer photo or different angle."
+        # If Cerebras failed, try a manual extraction approach
+        if not extracted_text:
+            extracted_text = """Facing issues while extracting OCR"""
             
         # Convert original image to base64 for client display
-        _, buffer = cv2.imencode('.jpg', original_image, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        _, buffer = cv2.imencode('.jpg', original_image)
         original_b64 = base64.b64encode(buffer).decode('utf-8')
         
         return {
@@ -279,21 +207,14 @@ def process_slide_with_cerebras(image):
     except Exception as e:
         print(f"Error in image processing: {str(e)}")
         # Return original image on error
-        try:
-            _, buffer = cv2.imencode('.jpg', image)
-            original_b64 = base64.b64encode(buffer).decode('utf-8')
-            
-            return {
-                'success': True,
-                'processed_image': f'data:image/jpeg;base64,{original_b64}',
-                'text': "Error extracting text from image. Please try again with a clearer photo."
-            }
-        except:
-            # Last resort fallback
-            return {
-                'success': False,
-                'error': f"Failed to process image: {str(e)}"
-            }
+        _, buffer = cv2.imencode('.jpg', image)
+        original_b64 = base64.b64encode(buffer).decode('utf-8')
+        
+        return {
+            'success': True,
+            'processed_image': f'data:image/jpeg;base64,{original_b64}',
+            'text': "Error extracting text from image. Please try again with a clearer photo."
+        }
 
 # Basic image enhancement function that works without Cerebras
 def basic_image_enhancement(image):
@@ -307,14 +228,8 @@ def basic_image_enhancement(image):
         Enhanced image
     """
     try:
-        # Create a copy to avoid modifying the original
-        img = image.copy()
-        
-        # Convert to grayscale if it's not already
-        if len(img.shape) == 3:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = img.copy()
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
         # Apply adaptive thresholding to improve contrast
         binary = cv2.adaptiveThreshold(
@@ -327,11 +242,7 @@ def basic_image_enhancement(image):
         opening = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
         
         # Convert back to BGR for consistency
-        if len(img.shape) == 3:
-            enhanced = cv2.cvtColor(opening, cv2.COLOR_GRAY2BGR)
-        else:
-            enhanced = opening
-        
+        enhanced = cv2.cvtColor(opening, cv2.COLOR_GRAY2BGR)
         return enhanced
         
     except Exception as e:
