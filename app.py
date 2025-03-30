@@ -14,6 +14,7 @@ from functools import wraps
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaInMemoryUpload
+import requests
 
 # Import Cerebras integration
 from cerebras_integration import process_slide_with_cerebras
@@ -43,11 +44,125 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# Helper function to get current user
+def get_current_user():
+    """Get current user from session"""
+    return session.get('user')
+
+# Helper function to build credentials object
+def get_credentials():
+    token = session.get('oauth_token')
+    if not token:
+        return None
+    
+    # Debug information - Print to console
+    print("-------- CREDENTIALS DEBUG INFO --------")
+    print(f"Token scopes: {token.get('scope', '')}")
+    print("----------------------------------------")
+    
+    return Credentials(
+        token=token.get('access_token'),
+        refresh_token=token.get('refresh_token'),
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+        client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+        scopes=token.get('scope', '').split(' ')
+    )
+
+# Helper functions to get Google services
+def get_calendar_service():
+    """Get Google Calendar service"""
+    credentials = get_credentials()
+    if not credentials:
+        return None
+    return build('calendar', 'v3', credentials=credentials)
+
+def get_drive_service():
+    """Get Google Drive service"""
+    credentials = get_credentials()
+    if not credentials:
+        return None
+    return build('drive', 'v3', credentials=credentials)
+
+def get_docs_service():
+    """Get Google Docs service"""
+    credentials = get_credentials()
+    if not credentials:
+        return None
+    return build('docs', 'v1', credentials=credentials)
+
+def get_people_service():
+    """Get Google People API service"""
+    credentials = get_credentials()
+    if not credentials:
+        return None
+    return build('people', 'v1', credentials=credentials)
+
 # Routes
 @app.route('/')
 def index():
-    user = session.get('user')
-    return render_template('index.html', user=user)
+    user = get_current_user()
+    current_event = None
+
+    if user:
+        try:
+            calendar_service = get_calendar_service()
+            if calendar_service:
+                now = datetime.datetime.utcnow()
+                now_str = now.isoformat() + 'Z'  # 'Z' indicates UTC time
+
+                # Get events happening now or upcoming (next 24 hours)
+                events_result = calendar_service.events().list(
+                    calendarId='primary',
+                    timeMin=now_str,
+                    timeMax=(now + datetime.timedelta(hours=24)).isoformat() + 'Z',
+                    maxResults=5,
+                    singleEvents=True,
+                    orderBy='startTime',
+                    fields='items(id,summary,description,start,end,attachments)'
+                ).execute()
+
+                events = events_result.get('items', [])
+                
+                # First check for an event happening right now
+                for event in events:
+                    start_time = event.get('start', {}).get('dateTime')
+                    end_time = event.get('end', {}).get('dateTime')
+                    
+                    if start_time and end_time:
+                        start_dt = datetime.datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                        end_dt = datetime.datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                        
+                        now_aware = now.replace(tzinfo=datetime.timezone.utc)
+                        
+                        if start_dt <= now_aware <= end_dt:
+                            current_event = event
+                            current_event['status'] = 'in_progress'
+                            break
+
+                # If no event is happening now, take the next upcoming one
+                if not current_event and events:
+                    current_event = events[0]  # First upcoming event
+                    current_event['status'] = 'upcoming'
+
+                # Check for associated document
+                if current_event:
+                    drive_service = get_drive_service()
+                    current_event['has_doc'] = False
+                    current_event['doc_id'] = None
+
+                    # Check description for document link
+                    description = current_event.get('description', '')
+                    doc_match = re.search(r'docs.google.com/document/d/([a-zA-Z0-9_-]+)', description)
+                    
+                    if doc_match:
+                        current_event['doc_id'] = doc_match.group(1)
+                        current_event['has_doc'] = True
+
+        except Exception as e:
+            print(f"Error fetching current event: {e}")
+
+    return render_template('index.html', user=user, current_event=current_event, active_page='home')
 
 @app.route('/login')
 def login():
@@ -72,6 +187,27 @@ def authorize():
     # Get user info
     resp = google.get('https://openidconnect.googleapis.com/v1/userinfo')
     user_info = resp.json()
+    
+    # Add profile picture URL to user info
+    if 'sub' in user_info:
+        # Attempt to get a higher resolution profile picture if available
+        try:
+            people_service = get_people_service()
+            if people_service:
+                person = people_service.people().get(
+                    resourceName=f'people/{user_info["sub"]}',
+                    personFields='photos'
+                ).execute()
+                
+                if 'photos' in person and len(person['photos']) > 0:
+                    # Find the photo with the highest resolution
+                    best_photo = max(person['photos'], key=lambda p: p.get('width', 0) if 'width' in p else 0)
+                    if 'url' in best_photo:
+                        user_info['picture'] = best_photo['url']
+        except Exception as e:
+            print(f"Error getting profile photo: {e}")
+            # Fall back to the default profile picture in user_info
+    
     session['user'] = user_info
     
     return redirect('/')
@@ -82,36 +218,16 @@ def logout():
     session.clear()
     return redirect('/')
 
-# Helper function to build credentials object
-def get_credentials():
-    token = session.get('oauth_token')
-    if not token:
-        return None
-    
-    # Debug information - Print to console
-    print("-------- CREDENTIALS DEBUG INFO --------")
-    print(f"Token scopes: {token.get('scope', '')}")
-    print("----------------------------------------")
-    
-    return Credentials(
-        token=token.get('access_token'),
-        refresh_token=token.get('refresh_token'),
-        token_uri='https://oauth2.googleapis.com/token',
-        client_id=os.environ.get("GOOGLE_CLIENT_ID"),
-        client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
-        scopes=token.get('scope', '').split(' ')
-    )
-
 @app.route('/calendar')
 @login_required
 def get_calendar():
-    credentials = get_credentials()
-    
-    # Print scope information to debug
-    print(f"Credential scopes: {credentials.scopes}")
-    
-    calendar_service = build('calendar', 'v3', credentials=credentials)
-    drive_service = build('drive', 'v3', credentials=credentials)
+    calendar_service = get_calendar_service()
+    if not calendar_service:
+        return redirect(url_for('logout'))
+        
+    drive_service = get_drive_service()
+    if not drive_service:
+        return redirect(url_for('logout'))
     
     # Get upcoming events
     now = datetime.datetime.utcnow().isoformat() + 'Z'  # 'Z' indicates UTC time
@@ -121,35 +237,49 @@ def get_calendar():
             timeMin=now,
             maxResults=20, 
             singleEvents=True,
-            orderBy='startTime'
+            orderBy='startTime',
+            fields='items(id,summary,description,start,end,attachments)'  # Include attachments field
         ).execute()
         
         events = events_result.get('items', [])
         
-        # Check for associated docs in event descriptions
+        # Check for associated docs
         for event in events:
             event['has_doc'] = False
             event['doc_id'] = None
             event['doc_name'] = None
             
-            # Check if event description contains a Google Docs link
+            # First check if event description contains a Google Docs link
             description = event.get('description', '')
+            doc_id = None
+            
+            # Check for SlideSync notes pattern
             if description and 'docs.google.com/document' in description:
                 # Extract document ID from description
                 doc_match = re.search(r'docs.google.com/document/d/([a-zA-Z0-9_-]+)', description)
                 if doc_match:
-                    event['has_doc'] = True
-                    event['doc_id'] = doc_match.group(1)
-                    
-                    # Try to get document name
-                    try:
-                        doc_info = drive_service.files().get(fileId=event['doc_id'], fields='name').execute()
-                        event['doc_name'] = doc_info.get('name', 'Linked Document')
-                    except Exception as e:
-                        print(f"Error getting doc info: {e}")
-                        event['doc_name'] = 'Linked Document'
+                    doc_id = doc_match.group(1)
+            
+            # Also check attachments if present
+            attachments = event.get('attachments', [])
+            for attachment in attachments:
+                if attachment.get('mimeType') == 'application/vnd.google-apps.document':
+                    doc_id = attachment.get('fileId')
+                
+            # If we found a document ID through any method
+            if doc_id:
+                event['has_doc'] = True
+                event['doc_id'] = doc_id
+                
+                # Try to get document name
+                try:
+                    doc_info = drive_service.files().get(fileId=doc_id, fields='name').execute()
+                    event['doc_name'] = doc_info.get('name', 'Linked Document')
+                except Exception as e:
+                    print(f"Error getting doc info: {e}")
+                    event['doc_name'] = 'Linked Document'
         
-        return render_template('calendar.html', events=events)
+        return render_template('calendar.html', events=events, user=get_current_user(), active_page='calendar')
     
     except Exception as e:
         error_message = f"Error accessing calendar: {str(e)}"
@@ -159,13 +289,9 @@ def get_calendar():
 @app.route('/docs')
 @login_required
 def get_docs():
-    credentials = get_credentials()
-    
-    # Print scope information to debug
-    print(f"Credential scopes for /docs: {credentials.scopes}")
-    
-    docs_service = build('docs', 'v1', credentials=credentials)
-    drive_service = build('drive', 'v3', credentials=credentials)
+    drive_service = get_drive_service()
+    if not drive_service:
+        return redirect(url_for('logout'))
     
     try:
         # Start with a simpler Drive API call
@@ -183,7 +309,7 @@ def get_docs():
         documents = results.get('files', [])
         print(f"Found {len(documents)} documents")
         
-        return render_template('docs.html', documents=documents)
+        return render_template('docs.html', documents=documents, user=get_current_user(), active_page='docs')
     
     except Exception as e:
         error_message = f"Error accessing documents: {str(e)}"
@@ -193,13 +319,14 @@ def get_docs():
 @app.route('/doc/<doc_id>')
 @login_required
 def view_doc(doc_id):
-    credentials = get_credentials()
-    docs_service = build('docs', 'v1', credentials=credentials)
+    docs_service = get_docs_service()
+    if not docs_service:
+        return redirect(url_for('logout'))
     
     try:
         # Get document content
         document = docs_service.documents().get(documentId=doc_id).execute()
-        return render_template('document.html', document=document)
+        return render_template('document.html', document=document, user=get_current_user())
     except Exception as e:
         error_message = f"Error accessing document: {str(e)}"
         print(error_message)
@@ -231,10 +358,12 @@ def debug_token():
 @app.route('/create-doc-for-event/<event_id>', methods=['GET', 'POST'])
 @login_required
 def create_doc_for_event(event_id):
-    credentials = get_credentials()
-    calendar_service = build('calendar', 'v3', credentials=credentials)
-    docs_service = build('docs', 'v1', credentials=credentials)
-    drive_service = build('drive', 'v3', credentials=credentials)
+    calendar_service = get_calendar_service()
+    docs_service = get_docs_service()
+    drive_service = get_drive_service()
+    
+    if not calendar_service or not docs_service or not drive_service:
+        return redirect(url_for('logout'))
     
     try:
         # Get event details
@@ -284,7 +413,7 @@ def create_doc_for_event(event_id):
             
             return redirect(f"https://docs.google.com/document/d/{doc_id}/edit")
         
-        return render_template('create_doc.html', event=event)
+        return render_template('create_doc.html', event=event, user=get_current_user())
     
     except Exception as e:
         error_message = f"Error creating document: {str(e)}"
@@ -295,28 +424,47 @@ def create_doc_for_event(event_id):
 @app.route('/slidesync')
 @login_required
 def slidesync():
-    credentials = get_credentials()
-    calendar_service = build('calendar', 'v3', credentials=credentials)
-    drive_service = build('drive', 'v3', credentials=credentials)
+    print("Starting slidesync route")
     
     try:
+        print("Getting calendar service")
+        calendar_service = get_calendar_service()
+        if not calendar_service:
+            print("Failed to get calendar service")
+            return redirect(url_for('logout'))
+            
+        print("Getting drive service")
+        drive_service = get_drive_service()
+        if not drive_service:
+            print("Failed to get drive service")
+            return redirect(url_for('logout'))
+        
+        print("Getting user from session")
+        user = get_current_user()
+        if not user:
+            print("No user in session")
+            return redirect(url_for('logout'))
+            
         # Get current event
         now = datetime.datetime.utcnow()
         now_str = now.isoformat() + 'Z'  # 'Z' indicates UTC time
-        
-        # Get events that are happening now
+
+        print("Fetching events")
+        # Get events happening now or upcoming (next 24 hours)
         events_result = calendar_service.events().list(
             calendarId='primary',
             timeMin=now_str,
-            timeMax=(now + datetime.timedelta(hours=2)).isoformat() + 'Z',
+            timeMax=(now + datetime.timedelta(hours=24)).isoformat() + 'Z',  # Look ahead 24 hours
             maxResults=5,
             singleEvents=True,
-            orderBy='startTime'
+            orderBy='startTime',
+            fields='items(id,summary,description,start,end,attachments)'  # Include attachments
         ).execute()
-        
+
         events = events_result.get('items', [])
         current_event = None
-        
+
+        # First check for an event happening right now
         for event in events:
             # Check if event is happening now
             start_time = event.get('start', {}).get('dateTime')
@@ -332,7 +480,13 @@ def slidesync():
                 
                 if start_dt <= now_aware <= end_dt:
                     current_event = event
+                    current_event['status'] = 'in_progress'
                     break
+
+        # If no event is happening now, take the next upcoming one
+        if not current_event and events:
+            current_event = events[0]  # First upcoming event
+            current_event['status'] = 'upcoming'
         
         # If there's a current event, check for associated document
         if current_event:
@@ -340,63 +494,43 @@ def slidesync():
             current_event['doc_id'] = None
             current_event['doc_name'] = None
             
-            # Check if event description contains a Google Docs link
+            # Check for docs through multiple methods
+            doc_id = None
+            
+            # Check description for SlideSync notes
             description = current_event.get('description', '')
             if description and 'docs.google.com/document' in description:
                 # Extract document ID from description
                 doc_match = re.search(r'docs.google.com/document/d/([a-zA-Z0-9_-]+)', description)
                 if doc_match:
-                    current_event['has_doc'] = True
-                    current_event['doc_id'] = doc_match.group(1)
-                    
-                    # Try to get document name
-                    try:
-                        doc_info = drive_service.files().get(fileId=current_event['doc_id'], fields='name').execute()
-                        current_event['doc_name'] = doc_info.get('name', 'Linked Document')
-                    except Exception as e:
-                        print(f"Error getting doc info: {e}")
-                        current_event['doc_name'] = 'Linked Document'
+                    doc_id = doc_match.group(1)
+            
+            # Check attachments if present
+            attachments = current_event.get('attachments', [])
+            if attachments:
+                for attachment in attachments:
+                    if attachment.get('mimeType') == 'application/vnd.google-apps.document':
+                        doc_id = attachment.get('fileId')
+            
+            # If we found a document through any method
+            if doc_id:
+                current_event['has_doc'] = True
+                current_event['doc_id'] = doc_id
+                
+                # Try to get document name
+                try:
+                    doc_info = drive_service.files().get(fileId=doc_id, fields='name').execute()
+                    current_event['doc_name'] = doc_info.get('name', 'Linked Document')
+                except Exception as e:
+                    print(f"Error getting doc info: {e}")
+                    current_event['doc_name'] = 'Linked Document'
         
-        return render_template('slidesync.html', current_event=current_event)
+        return render_template('slidesync.html', current_event=current_event, user=user, active_page='slidesync')
     
     except Exception as e:
         error_message = f"Error accessing calendar data: {str(e)}"
-        print(error_message)
+        print(f"Exception in slidesync route: {error_message}")
         return f"<h1>Error</h1><p>{error_message}</p><p><a href='/logout'>Logout and try again</a></p>"
-
-# Test route to verify static files are working
-@app.route('/test-static')
-def test_static():
-    return """
-    <html>
-    <head>
-        <link href="/static/css/styles.css" rel="stylesheet">
-    </head>
-    <body>
-        <h1>Static File Test</h1>
-        <p class="current-class">If this has styling, CSS is working!</p>
-        <script src="/static/js/slidesync.js"></script>
-        <script>
-            // Should not cause errors if JS is loading correctly
-            document.write('<p>JavaScript is working!</p>');
-        </script>
-    </body>
-    </html>
-    """
-
-# Test route to verify slidesync template
-@app.route('/test-template')
-def test_template():
-    # Mock current event for testing
-    current_event = {
-        'summary': 'Test Class',
-        'start': {'dateTime': '2023-01-01T10:00:00Z'},
-        'end': {'dateTime': '2023-01-01T11:00:00Z'},
-        'has_doc': True,
-        'doc_id': 'test-doc-id',
-        'doc_name': 'Test Document'
-    }
-    return render_template('slidesync.html', current_event=current_event)
 
 @app.route('/process-slide', methods=['POST'])
 @login_required
@@ -429,10 +563,12 @@ def create_slidesync_doc():
     Creates a new Google Doc for slide captures if one doesn't exist yet.
     Returns the document ID and name.
     """
-    credentials = get_credentials()
-    docs_service = build('docs', 'v1', credentials=credentials)
-    drive_service = build('drive', 'v3', credentials=credentials)
-    calendar_service = build('calendar', 'v3', credentials=credentials)
+    docs_service = get_docs_service()
+    drive_service = get_drive_service()
+    calendar_service = get_calendar_service()
+    
+    if not docs_service or not drive_service or not calendar_service:
+        return jsonify({'success': False, 'error': 'Failed to initialize Google services'})
     
     try:
         data = request.get_json()
@@ -538,68 +674,14 @@ def upload_image():
         print(f"Error processing uploaded image: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/test-cerebras')
-@login_required
-def test_cerebras():
-    """Test the Cerebras API connection"""
-    try:
-        from cerebras.cloud.sdk import Cerebras
-        cerebras_client = Cerebras(api_key=os.environ.get("CEREBRAS_API_KEY"))
-        
-        # Test with a simple text completion
-        response = cerebras_client.chat.completions.create(
-            messages=[{"role": "user", "content": "Hello, are you working?"}],
-            model="llama3.1-8b",
-            max_tokens=10
-        )
-        
-        return jsonify({
-            'success': True,
-            'message': 'Cerebras API is working',
-            'response': response.choices[0].message.content
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        })
-
-@app.route('/test-image-processing')
-def test_image_processing():
-    """Test image processing without Cerebras"""
-    try:
-        # Create a test image with text
-        img = np.ones((300, 600, 3), dtype=np.uint8) * 255
-        cv2.putText(img, "Test Image", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 3)
-        
-        # Process with basic enhancement
-        from cerebras_integration import basic_image_enhancement
-        enhanced = basic_image_enhancement(img)
-        
-        # Convert to base64
-        _, buffer = cv2.imencode('.png', enhanced)
-        img_base64 = base64.b64encode(buffer).decode('utf-8')
-        
-        return f"""
-        <html>
-        <body>
-            <h1>Image Processing Test</h1>
-            <h2>Original Test Image</h2>
-            <img src="data:image/png;base64,{base64.b64encode(cv2.imencode('.png', img)[1]).decode('utf-8')}" />
-            <h2>Enhanced Image</h2>
-            <img src="data:image/png;base64,{img_base64}" />
-        </body>
-        </html>
-        """
-    except Exception as e:
-        return f"Error: {str(e)}"
-
 @app.route('/save-to-doc', methods=['POST'])
 @login_required
 def save_to_doc():
-    credentials = get_credentials()
-    docs_service = build('docs', 'v1', credentials=credentials)
-    drive_service = build('drive', 'v3', credentials=credentials)
+    docs_service = get_docs_service()
+    drive_service = get_drive_service()
+    
+    if not docs_service or not drive_service:
+        return jsonify({'success': False, 'error': 'Failed to initialize Google services'})
     
     try:
         # Get data from request
@@ -728,7 +810,149 @@ def save_to_doc():
     except Exception as e:
         print(f"Error saving to document: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
-    
+
+@app.route('/about')
+def about():
+    user = get_current_user()
+    return render_template('about.html', user=user, active_page='about')
+
+@app.route('/create-event-and-doc', methods=['POST'])
+@login_required
+def create_event_and_doc():
+    try:
+        data = request.get_json()
+        
+        # Get services
+        calendar_service = get_calendar_service()
+        drive_service = get_drive_service()
+        docs_service = get_docs_service()
+        
+        if not calendar_service or not drive_service or not docs_service:
+            return jsonify({'success': False, 'error': 'Failed to initialize Google services'})
+        
+        # Format dates properly for Google Calendar API
+        start_time = data['start_time']
+        end_time = data['end_time']
+        
+        # Ensure dates have timezone information
+        if not start_time.endswith('Z') and '+' not in start_time:
+            # Try to convert datetime-local string to ISO format with Z
+            try:
+                start_dt = datetime.datetime.fromisoformat(start_time)
+                start_time = start_dt.isoformat() + 'Z'
+            except:
+                start_time = start_time + 'Z'
+                
+        if not end_time.endswith('Z') and '+' not in end_time:
+            try:
+                end_dt = datetime.datetime.fromisoformat(end_time)
+                end_time = end_dt.isoformat() + 'Z'
+            except:
+                end_time = end_time + 'Z'
+                
+        print(f"Formatted start time: {start_time}")
+        print(f"Formatted end time: {end_time}")
+        
+        # Create event in Google Calendar
+        event = {
+            'summary': data['name'],
+            'start': {
+                'dateTime': start_time,
+                'timeZone': 'UTC',  # Use UTC for consistency
+            },
+            'end': {
+                'dateTime': end_time,
+                'timeZone': 'UTC',  # Use UTC for consistency
+            },
+        }
+        
+        created_event = calendar_service.events().insert(
+            calendarId='primary',
+            body=event
+        ).execute()
+        
+        # Create a new Google Doc
+        doc_title = f"{data['name']} Notes - {datetime.datetime.now().strftime('%Y-%m-%d')}"
+        doc_metadata = {
+            'name': doc_title,
+            'mimeType': 'application/vnd.google-apps.document',
+        }
+        
+        doc = drive_service.files().create(body=doc_metadata).execute()
+        doc_id = doc.get('id')
+        
+        # Add initial content to the document
+        docs_service.documents().batchUpdate(
+            documentId=doc_id,
+            body={
+                'requests': [
+                    {
+                        'insertText': {
+                            'location': {
+                                'index': 1,
+                            },
+                            'text': f"# {data['name']}\nDate: {datetime.datetime.now().strftime('%Y-%m-%d')}\n\n"
+                        }
+                    }
+                ]
+            }
+        ).execute()
+        
+        # Link the document to the event
+        event_description = created_event.get('description', '')
+        doc_link = f"https://docs.google.com/document/d/{doc_id}/edit"
+        
+        if event_description:
+            updated_description = f"{event_description}\n\nSlideSync notes: {doc_link}"
+        else:
+            updated_description = f"SlideSync notes: {doc_link}"
+        
+        created_event['description'] = updated_description
+        calendar_service.events().update(
+            calendarId='primary', 
+            eventId=created_event['id'], 
+            body=created_event
+        ).execute()
+        
+        # Return success with created event and doc info
+        return jsonify({
+            'success': True,
+            'event': created_event,
+            'doc_id': doc_id,
+            'doc_url': f"https://docs.google.com/document/d/{doc_id}/edit"
+        })
+        
+    except Exception as e:
+        print(f"Error creating event and doc: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/test-static')
+def test_static():
+    return """
+    <html>
+    <head>
+        <link href="/static/css/styles.css" rel="stylesheet">
+    </head>
+    <body>
+        <h1>Static File Test</h1>
+        <p class="current-class">If this has styling, CSS is working!</p>
+        <script src="/static/js/slidesync.js"></script>
+        <script>
+            // Should not cause errors if JS is loading correctly
+            document.write('<p>JavaScript is working!</p>');
+        </script>
+    </body>
+    </html>
+    """
+
+# Route to serve static Google login button images
+@app.route('/static/img/google/<filename>')
+def google_images(filename):
+    # This route can serve Google button images from a local directory
+    return send_from_directory('static/img/google', filename)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))

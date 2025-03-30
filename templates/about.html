@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SlideSync - About</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="/static/css/styles.css" rel="stylesheet">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/img/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/img/favicon-16x16.png">
+    <meta name="theme-color" content="#4361ee">
+</head>
+<body>
+    <!-- Mobile Nav Toggle Button (only visible on small screens) -->
+    <button class="nav-toggle-btn" id="navToggleBtn" aria-label="Toggle navigation">
+        <i class="bi bi-list"></i>
+    </button>
+
+    <!-- Side Navigation (off-canvas on mobile) -->
+    <nav class="side-nav" id="sideNav">
+        <div class="side-nav-header">
+            <div class="logo">
+                <span class="text-gradient">SlideSync</span>
+            </div>
+            
+        </div>
+        {% if user %}
+        <div class="nav-user-info">
+            <div class="avatar-circle">
+                <i class="bi bi-person-circle"></i>
+            </div>
+            <div class="user-details">
+                <h6>{{ user.name }}</h6>
+                <p class="text-muted mb-0 small">{{ user.email }}</p>
+            </div>
+        </div>
+        <ul class="nav-links">
+            <li>
+                <a href="/"><i class="bi bi-house-door"></i> Home</a>
+            </li>
+            <li>
+                <a href="/calendar"><i class="bi bi-calendar-week"></i> Calendar</a>
+            </li>
+            <li>
+                <a href="/docs"><i class="bi bi-file-earmark-text"></i> Documents</a>
+            </li>
+            <li>
+                <a href="/slidesync"><i class="bi bi-camera"></i> SlideSync</a>
+            </li>
+            <li class="active">
+                <a href="/about"><i class="bi bi-info-circle"></i> About</a>
+            </li>
+            <li class="nav-divider"></li>
+            <li>
+                <a href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a>
+            </li>
+        </ul>
+        {% else %}
+        <ul class="nav-links">
+            <li>
+                <a href="/"><i class="bi bi-house-door"></i> Home</a>
+            </li>
+            <li class="active">
+                <a href="/about"><i class="bi bi-info-circle"></i> About</a>
+            </li>
+        </ul>
+        {% endif %}
+    </nav>
+
+    <div class="main-content">
+        <div class="container">
+            <!-- Header -->
+            <header class="app-header animate-fade-in text-center">
+                <div class="logo">
+                    <span class="text-gradient">SlideSync</span>
+                </div>
+
+            </header>
+
+            <!-- Main Content -->
+            <main>
+                <!-- About Section -->
+                <section class="about-section mb-5 animate-fade-in">
+                    <div class="card">
+                        <div class="card-body p-4">
+                            <h2 class="mb-4 text-center">Our Mission</h2>
+                            <p class="lead text-center mb-5">
+                                SlideSync was created to solve a common problem faced by students, to have a well built management system for the thousands of images students click of lecture notes. The system currently has a suggested pre-req, have a calendar system of classes so that the pictures get assigned correctly!
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Team Section -->
+                <section class="team-section mb-5 animate-fade-in" style="animation-delay: 0.2s;">
+                    <div class="card">
+                        <div class="card-body p-4">
+                            <h2 class="mb-4 text-center">Meet the Team</h2>
+                            
+                            <div class="row justify-content-center">
+                                <!-- Team Member 1 - YOU -->
+                                <div class="col-md-6 col-lg-4 mb-4">
+                                    <div class="team-card text-center">
+                                        <div class="team-img-container mb-3">
+                                            <!-- Replace with your photo or avatar -->
+                                            <div class="team-avatar">
+                                                <img src="/static/assets/placeholder.png" alt="SlideSync in action" class="hero-image">
+                                            </div>
+                                        </div>
+                                        <h3>Varun Deliwala</h3>
+                                        <p class="text-muted mb-3">Sleep Deprived Engineer #1</p>
+                                        <p class="mb-4">Computer Vision Research and average Hackathon Builder</p>
+                                        <div class="social-links">
+                                            <a href="https://github.com/varun1352" target="_blank" class="social-link">
+                                                <i class="bi bi-github"></i>
+                                            </a>
+                                            <a href="https://www.linkedin.com/in/varun-deliwala-628771192/" target="_blank" class="social-link">
+                                                <i class="bi bi-linkedin"></i>
+                                            </a>
+                                            <a href="https://varun1352.github.io" target="_blank" class="social-link">
+                                                <i class="bi bi-globe"></i>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Team Member 2 - TEAMMATE -->
+                                <div class="col-md-6 col-lg-4 mb-4">
+                                    <div class="team-card text-center">
+                                        <div class="team-img-container mb-3">
+                                            <!-- Replace with teammate's photo or avatar -->
+                                            <div class="team-avatar">
+                                                <img src="/static/assets/placeholder.png" alt="SlideSync in action" class="hero-image">
+                                            </div>
+                                        </div>
+                                        <h3>Ninad Chaudhari</h3>
+                                        <p class="text-muted mb-3">Sleep Deprived Engineer #2</p>
+                                        <p class="mb-4">Data Scientist and average Hackathon Builder</p>
+                                        <div class="social-links">
+                                            <a href="https://github.com/Ninad-Chaudhari" target="_blank" class="social-link">
+                                                <i class="bi bi-github"></i>
+                                            </a>
+                                            <a href="https://www.linkedin.com/in/ninad-chaudhari-8a4829193/" target="_blank" class="social-link">
+                                                <i class="bi bi-linkedin"></i>
+                                            </a>
+                                            <!-- <a href="" target="_blank" class="social-link">
+                                                <i class="bi bi-globe"></i>
+                                            </a> -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Contact Section -->
+                <section class="contact-section mb-5 animate-fade-in" style="animation-delay: 0.3s;">
+                    <div class="card">
+                        <div class="card-body p-4 text-center">
+                            <h2 class="mb-4">Get in Touch</h2>
+                            <p class="lead mb-4">Have questions, suggestions, or feedback? We'd love to hear from you!</p>
+                            
+                            <div class="row justify-content-center mb-4">
+                                <div class="col-md-8">
+                                    <div class="d-flex justify-content-center flex-wrap gap-3">
+                                        <a href="mailto:vd2298@nyu.edu" class="btn btn-primary">
+                                            <i class="bi bi-envelope-fill me-2"></i>Email Us
+                                        </a>
+                                        <a href="https://github.com/varun1352/slidesync" target="_blank" class="btn btn-outline-primary">
+                                            <i class="bi bi-github me-2"></i>GitHub
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+
+            <!-- Footer -->
+            <footer class="app-footer animate-fade-in" style="animation-delay: 0.4s;">
+                <div class="row">
+                    <div class="col-md-6 text-center text-md-start mb-3 mb-md-0">
+                        <p class="mb-0">© 2025 SlideSync. All rights reserved.</p>
+                    </div>
+                    <div class="col-md-6 text-center text-md-end">
+                        <a href="/about" class="footer-link">About</a>
+                        <a href="https://github.com/varun1352/slidesync" target="_blank" class="footer-link">GitHub</a>
+                        <a href="mailto:contact@slidesync.app" class="footer-link">Contact</a>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Backdrop for mobile navigation -->
+    <div class="nav-backdrop" id="navBackdrop"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Mobile navigation toggle
+        document.addEventListener('DOMContentLoaded', function() {
+            const sideNav = document.getElementById('sideNav');
+            const navToggleBtn = document.getElementById('navToggleBtn');
+            const navCloseBtn = document.getElementById('navCloseBtn');
+            const navBackdrop = document.getElementById('navBackdrop');
+            
+            function openNav() {
+                sideNav.classList.add('open');
+                navBackdrop.classList.add('show');
+                document.body.classList.add('nav-open');
+            }
+            
+            function closeNav() {
+                sideNav.classList.remove('open');
+                navBackdrop.classList.remove('show');
+                document.body.classList.remove('nav-open');
+            }
+            
+            if (navToggleBtn) navToggleBtn.addEventListener('click', openNav);
+            if (navCloseBtn) navCloseBtn.addEventListener('click', closeNav);
+            if (navBackdrop) navBackdrop.addEventListener('click', closeNav);
+            
+            // Close navigation on window resize (if switching to desktop view)
+            window.addEventListener('resize', function() {
+                if (window.innerWidth >= 992) {
+                    closeNav();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
