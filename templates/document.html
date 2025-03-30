@@ -1,0 +1,89 @@
+<!-- templates/document.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ document.title }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .doc-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4285F4;
+            margin-bottom: 20px;
+        }
+        .doc-content {
+            line-height: 1.6;
+        }
+        .button {
+            display: inline-block;
+            background-color: #4285F4;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 10px;
+            margin-right: 10px;
+        }
+        .edit-button {
+            background-color: #0f9d58;
+        }
+        .nav-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .doc-metadata {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <a href="/" class="button">Home</a>
+        <a href="/calendar" class="button">Calendar</a>
+        <a href="/docs" class="button">Documents</a>
+        <a href="https://docs.google.com/document/d/{{ document.documentId }}/edit" class="button edit-button" target="_blank">Edit in Google Docs</a>
+    </div>
+    
+    <div class="container">
+        <div class="doc-title">{{ document.title }}</div>
+        
+        <div class="doc-metadata">
+            Document ID: {{ document.documentId }}<br>
+            Last modified: {{ document.get('lastModified', {}).get('datetime', 'Unknown') if document.get('lastModified') else 'Unknown' }}
+        </div>
+        
+        <div class="doc-content">
+            {% if document.get('body') and document.body.get('content') %}
+                {% for content in document.body.content %}
+                    {% if content.get('paragraph') %}
+                        <p>
+                            {% for element in content.paragraph.elements %}
+                                {% if element.get('textRun') %}
+                                    {{ element.textRun.content|safe }}
+                                {% endif %}
+                            {% endfor %}
+                        </p>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <p>This document has no content or cannot be displayed in this view.</p>
+                <p>Please use the "Edit in Google Docs" button to view and edit the full document.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

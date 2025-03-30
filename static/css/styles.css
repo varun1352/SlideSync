@@ -1,0 +1,145 @@
+/* General Styles */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+    color: #333;
+}
+
+.container {
+    max-width: 960px;
+}
+
+/* Header Styles */
+h1, h2, h3, h4 {
+    font-weight: 600;
+}
+
+/* Card and Container Styles */
+.card {
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Camera Styling */
+.camera-container {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+#video {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+#canvas {
+    display: none;
+}
+
+#capturedImage {
+    width: 100%;
+    max-width: 640px;
+    display: none;
+    margin: 20px auto;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+}
+
+.capture-btn {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    padding: 12px 24px;
+    border-radius: 30px;
+    background-color: rgba(13, 110, 253, 0.8);
+    color: white;
+    border: none;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s;
+}
+
+.capture-btn:hover {
+    transform: translateX(-50%) scale(1.05);
+    background-color: rgba(13, 110, 253, 0.9);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.controls {
+    margin: 20px auto;
+    text-align: center;
+}
+
+/* Current Class Info */
+.current-class {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border-left: 5px solid #0d6efd;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+}
+
+.current-class:hover {
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+    border-left-width: 8px;
+}
+
+/* Processing Overlay */
+.processing-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    color: white;
+    display: none;
+    backdrop-filter: blur(3px);
+}
+
+/* OCR Results */
+#ocrResults {
+    transition: all 0.3s;
+}
+
+#extractedText {
+    font-family: 'Courier New', Courier, monospace;
+    white-space: pre-wrap;
+    line-height: 1.5;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .camera-container {
+        max-width: 100%;
+    }
+    
+    #capturedImage {
+        max-width: 100%;
+    }
+    
+    .capture-btn {
+        padding: 10px 20px;
+    }
+}

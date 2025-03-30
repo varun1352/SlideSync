@@ -1,0 +1,95 @@
+<!-- templates/create_doc.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Document for Event</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .event-details {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        .event-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #4285F4;
+            margin-bottom: 10px;
+        }
+        .event-time {
+            color: #666;
+        }
+        .button {
+            display: inline-block;
+            background-color: #4285F4;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 10px;
+            border: none;
+            cursor: pointer;
+        }
+        .submit-button {
+            background-color: #0f9d58;
+            font-size: 16px;
+            padding: 12px 24px;
+        }
+        .cancel-button {
+            background-color: #db4437;
+        }
+        .form-section {
+            margin-top: 20px;
+        }
+        .info-text {
+            margin: 20px 0;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <h1>Create Document for Event</h1>
+    
+    <div class="container">
+        <div class="event-details">
+            <div class="event-title">{{ event.summary }}</div>
+            <div class="event-time">
+                {% if event.start.get('dateTime') %}
+                    {{ event.start.get('dateTime')|replace('T', ' ')|replace(':00Z', '')|replace(':00+00:00', '') }}
+                {% else %}
+                    {{ event.start.get('date') }} (All day)
+                {% endif %}
+            </div>
+            {% if event.get('location') %}
+                <div class="event-location">Location: {{ event.location }}</div>
+            {% endif %}
+        </div>
+        
+        <div class="info-text">
+            You are about to create a new Google Document for this event. The document will be:
+            <ul>
+                <li>Titled based on the event name</li>
+                <li>Pre-populated with a basic meeting notes template</li>
+                <li>Linked to this calendar event (a link will be added to the event description)</li>
+            </ul>
+        </div>
+        
+        <form method="post" action="/create-doc-for-event/{{ event.id }}" class="form-section">
+            <button type="submit" class="button submit-button">Create Document</button>
+            <a href="/calendar" class="button cancel-button">Cancel</a>
+        </form>
+    </div>
+</body>
+</html>

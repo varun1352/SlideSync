@@ -1,0 +1,12 @@
+flask==2.3.3
+authlib==1.2.1
+requests==2.31.0
+google-api-python-client==2.117.0
+google-auth==2.23.0
+google-auth-oauthlib==1.1.0
+opencv-python-headless==4.8.1.78
+pytesseract==0.3.10
+pillow==10.1.0
+numpy==1.26.0
+cerebras_cloud_sdk
+gunicorn==21.2.0
