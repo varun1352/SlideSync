@@ -1,4 +1,3 @@
-```markdown
 # SlideSync - Student Lecture Assistant
 
 ## Overview
