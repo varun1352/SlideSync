@@ -8,7 +8,7 @@ import io
 import cv2
 import numpy as np
 from PIL import Image
-from flask import Flask, redirect, url_for, session, render_template, jsonify, request, flash
+from flask import Flask, redirect, url_for, session, render_template, jsonify, request, flash, send_from_directory
 from authlib.integrations.flask_client import OAuth
 from functools import wraps
 from google.oauth2.credentials import Credentials
